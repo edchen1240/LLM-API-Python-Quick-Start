@@ -77,7 +77,4 @@ The `OpenAI_API_1_text.py` can be replaced with other files (but not `OpenAI_API
 2. Suggestions and recommendations are welcome: [edchen93\@mit.edu](mailto:edchen93@mit.edu)
 
 ## Maintaince Record
-1. 2023-12-20, Create and upload.
-2. 2024-01-10, Update codes.
-3. 2024-01-15, Update ReadMe.
-4. 2024-03-11, Upgrade interation question to allow new topic, follow up, or the original select file.
+1. 2024-03-16. First edition upload.
