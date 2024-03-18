@@ -2,7 +2,7 @@
 [OpenAI-API-1_text.py]
 Purpose: Correct Ask Directory or select file.
 Author: Meng-Chi Ed Chen
-Date: 2023-11-07
+Date: 2024-03-16
 Reference:
     1. 
     2.
@@ -13,7 +13,7 @@ Status: Complete.
 #[1] Import library.
 import LLM_00_module_1_API as APIS #type: ignore
 import LLM_00_module_2_Peripheral as PERF #type: ignore
-anthropic_api_key = 'put-your-api-key-here'  #  put-your-api-key-here.
+anthropic_api_key='put-your-api-key-here'#put-your-api-key-here.
 
 #[2] Assign model. View more model and pricing here: https://openai.com/pricing
 #model_name = 'claude-3-opus-20240229'	
