@@ -13,8 +13,8 @@ Status: Complete.
 import sys, os, base64, tkinter, datetime, json, requests, subprocess, re, shutil, time
 from tkinter import filedialog
 from openai import OpenAI
-
 from datetime import datetime, timedelta
+import LLM_00_module_2_Peripheral as PERF #type: ignore
 
 
 def check_API_key(api_key):
@@ -28,32 +28,57 @@ def check_API_key(api_key):
 #[1-1] Ask text question. Used most frequent.
 def OpenAI_GPT_API_short(model_name, openai_api_key, question_content, temperature):
     print('\n[OpenAI_GPT_API_short]')
+    #[1] Check API key and attach it.
     check_API_key(openai_api_key)
     openai_api_url = "https://api.openai.com/v1/chat/completions"
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {openai_api_key}"
     }
+
+    messages = [{'role': 'user', 'content': question_content}]
+    
+    # [3] Check if this is a vision problem.
+    if 'vision' in model_name.lower() or 'o' in model_name.lower():
+        text = 'This is a vision model. Choose an image for this vision question.'
+        print(text)
+        path_image, basename_image = PERF.tkinter_select_file(dialog_title = text)
+        if path_image:
+            base64_image = encode_image(path_image)
+            messages.append({
+                'role': 'user',
+                'content': [{
+                    'type': 'image_url',
+                    'image_url': {
+                        'url': f"data:image/jpeg;base64,{base64_image}"
+                    }
+                }]
+            })
+    
+    #[5] Set model name and temperature
     data = {
         "model": model_name,
-        "messages": [{'role': 'user', 'content': question_content}],
-        "temperature": temperature 
+        "messages": messages,
+        "temperature": temperature
     }
-    #[] Send the POST request to the OpenAI API
+
     print('--Sending API request. Please wait for HTTP request-response cycle.\n')
-    response = requests.post(openai_api_url, headers=headers, data=json.dumps(data))
+    response = requests.post(openai_api_url, headers=headers, json=data)
+    
+    #[6] Organize response
     content = None
     if response.status_code == 200:
-        response_data = response.json() 
+        response_data = response.json()
         content = response_data["choices"][0]["message"]["content"]
         usage_prompt = str(response_data["usage"]["prompt_tokens"])
         usage_completion = str(response_data["usage"]["completion_tokens"])
         usage_total = str(response_data["usage"]["total_tokens"])
-        info_2nd_row = f'[Token] {model_name} (prompt, completion, total): {usage_prompt}, {usage_completion}, {usage_total}.'
+        info_2nd_row = f'[Model]{model_name} [Token](input, output): {usage_prompt}, {usage_completion}.'
         content = info_2nd_row + '\n\n' + content + '\n'
     else:
         print("Error:", response.status_code, response.text, sep='\n')
     return content
+
 
 
 #[1-2] Ask text question. Use this if you prefer to include additional_info such as timestamp and token usage.
@@ -171,6 +196,7 @@ import google.generativeai as genai
 
 def DeepMind_Gemini_API_short(model_name, gemini_api_key, question_content, temperature, max_output_tokens):
     print('\n[Gemini_API_short]')
+    check_API_key(gemini_api_key)
     genai.configure(api_key=gemini_api_key)
     model = genai.GenerativeModel(model_name)
     #[] Send the POST request to the OpenAI API
@@ -179,9 +205,10 @@ def DeepMind_Gemini_API_short(model_name, gemini_api_key, question_content, temp
                                       , generation_config={'temperature': temperature
                                                            ,'max_output_tokens': max_output_tokens})
     content = response.text
-    len_content = len(content.split(' '))
-    info_2nd_row = f'[Token] {model_name} (text): {len_content}.'
-    content = info_2nd_row + '\n\n' + response.text + '\n'
+    len_input = len(question_content.split(' '))
+    len_output = len(content.split(' '))
+    info_2nd_row = f'[Model]{model_name} [Token](input, output): {len_input}, {len_output}.'
+    content = info_2nd_row + '\n\n' + content + '\n'
     #print(f'\n[response start]\n\n{response}\n\n[response end]\n')
     return content
 
@@ -211,7 +238,7 @@ def Anthropic_Claude_API_long(model_name, anthropic_api_key, question_content, m
         content = "\n".join(texts)
         usage_input = str(response_data["usage"]["input_tokens"])
         usage_output = str(response_data["usage"]["output_tokens"])
-        info_2nd_row = f'[Token] {model_name} (prompt, completion): {usage_input}, {usage_output}.'
+        info_2nd_row = f'[Model]{model_name} [Token](input, output): {usage_input}, {usage_output}.'
         content = info_2nd_row + '\n\n' + content + '\n'
     else:
         print("Error:", response.status_code, response.text, sep='\n')
