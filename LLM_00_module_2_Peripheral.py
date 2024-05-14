@@ -15,15 +15,14 @@ from tkinter import filedialog
 from openai import OpenAI
 
 from datetime import datetime, timedelta
-
+import pandas as pd
+from tabulate import tabulate
 
 
 
 
 
 #[1] Basic functions.
-
-
 
 
 def datetime_stamp():
@@ -36,51 +35,101 @@ def datetime_filename():
     return now.strftime("%Y-%m%d-%H%M")
 
 
+def read_excel_as_df(path_excel, sheet_name=None):
+    print('\n[read_excel_as_df]')
+    if sheet_name is None:
+        sheet_name = 0  # Assuming 0 is the index of the first sheet
+    df = pd.read_excel(path_excel, sheet_name=sheet_name)
+    print('--[dataframe headers]', df.head())
+    return df
+
 
 #[2] Cool interaction questions.
 
 
+def q0_choose_provider_and_model(path_model_excel):
+    print('\n[q0_choose_provider_and_model]')
+    #[1] Read excel as dataframe
+    try:
+        df = pd.read_excel(path_model_excel, '01_Pricing')
+        df['model_name'] = df['model_name'].str.strip()
+        truncate_api_key = lambda x: x[:10] + '...' if len(x) > 10 else x
+        df_cover = df.copy()
+        df_cover = df_cover.drop(columns=['Link'])
+        df_cover['api_key'] = df_cover['api_key'].apply(truncate_api_key)
+        print(tabulate(df_cover, headers='keys', tablefmt='orgtbl'))
+    except:
+        text_please_create_excel = \
+        f'\n[Create Excel with Model Information]\n'\
+        f'Please create an excel at the following path: {path_model_excel}\n'\
+        f'Name the first sheet as "01_Pricing", and create six columns with the follow name: '\
+        f'llm_provider, model_name, Input (USD/Mtok), Output (USD/Mtok), Link, api_key\n'\
+        f'Column names with underscore need to be exactly the same, and those contents must be filled, '\
+        f'because they will be read by code.\n\n'
+        print(text_please_create_excel)
+    message = \
+    f'\n[Select model]\n\
+    Type the index of the model that fits your purpose today.\n'
+    ans_model = int(input(message))
+    len_model = len(df)
+    if 0 <= ans_model or ans_model <= len_model:
+        llm_provider = df['llm_provider'].iloc[ans_model]
+        model_name = df['model_name'].iloc[ans_model]
+        api_key = df['api_key'].iloc[ans_model]
+    else:
+        raise ValueError('Please select valid model. System exit.')
+        sys.exit()
+    return llm_provider, model_name, api_key
 
-def q1_new_file_or_followup(dir_questions, model_name, path_prompt=None):
+
+
+def q1_new_file_or_followup(dir_questions, llm_provider, model_name, path_prompt=None):
     """
     [Opening question]
     """
+    print('\n\n[q1_new_file_or_followup]')
     dt_file = datetime_filename()
     message = \
-    f'\nHello, how can I help you?   {dt_file}  {model_name}\n\
+    f'\n[{dt_file}] Hello, this is {model_name} from {llm_provider}. How can I help you today? \n\
     (a) Type a new name for the new topic. \n\
         This will create and open a new txt file named as "{dt_file}_Topic-1".\n\
     (b) Type "+" to followup with the latest question.\n\
         This will copy the latest txt file and create a "_n+1" version for it.\n\
-    (c) Type nothing (just press enter) to choose an existing text file.\n'
-    string_ques = input(message)
-    if string_ques == '+':
+    (c) Type nothing (just press enter) to choose an existing text file.\n\
+    (d) Type "0" to start a new round.\n\n'
+    ans_task = input(message)
+    if ans_task == '+':
         path_latest_txt = find_latest_txt(dir_questions)
-        path_txt = increment_filename(path_latest_txt)
+        path_txt = create_plus_one_copy_of_txt_file(path_latest_txt)
         basename_txt = os.path.basename(path_txt)
         print(f'--> (b) Followup the latest question: {basename_txt}')
         open_txt(path_txt)
-        q2_let_me_know_when_question_is_ready(path_txt, path_prompt)
-    elif string_ques == '':
+        q2_let_me_know_when_question_is_ready(model_name, path_txt, path_prompt)
+    elif ans_task == '':
         print('--> (c) Choose an existing question file.')
         path_txt, _ = tkinter_select_file(dialog_title = 'Choose an existing question file')
+    elif ans_task == '0':
+        print('--> (d) Start a new round.')
+        script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'LLM_07_All_Models.py')
+        os.system(f'start cmd /k python "{script_path}"')
+        sys.exit() 
     else:
-        print(f"--> (a) Let's start a new topic of {string_ques}.")
-        filename = dt_file + '_' + string_ques + '_1.txt'
+        print(f"--> (a) Let's start a new topic of {ans_task}.")
+        filename = dt_file + '_' + ans_task + '_1.txt'
         path_txt = create_txt_file(filename, dir_questions)
         open_txt(path_txt)
-        q2_let_me_know_when_question_is_ready(path_txt, path_prompt)
+        q2_let_me_know_when_question_is_ready(model_name, path_txt, path_prompt)
     return path_txt
 
 
 
-def q2_let_me_know_when_question_is_ready(path_txt="", path_prompt=None):
-    print('\n[q2_let_me_know_when_question_is_ready]')
+def q2_let_me_know_when_question_is_ready(model_name, path_txt="", path_prompt=None):
+    print('\n\n[q2_let_me_know_when_question_is_ready]')
     #print(f'[path_prompt]: {path_prompt}. Is the path_prompt Noen? empty?{path_prompt is not None}  {path_prompt != ""} ')
     basename_txt = os.path.basename(path_txt)
     message = f"The file {basename_txt} has been created and is now open for you.\n"
     
-    # Check if path_prompt is not None
+    #[3] Check if path_prompt is not None
     if path_prompt is not None and path_prompt != "":
         basename_prompt = os.path.basename(path_prompt)
         prompt_text = f"\n{read_text_from_txt(path_prompt, char_preview=0)}\n"
@@ -88,44 +137,50 @@ def q2_let_me_know_when_question_is_ready(path_txt="", path_prompt=None):
     
     message += "Please save and close the program once you finish compiling the question.\nPress Enter to continue.\n"
     _ = input(message)  # The line is used to wait for enter pressed. Do not delete.
+    
     print("The question is ready. Let's proceed.")
+
 
 
 
 #[3] Peripheral functions
 
-def remove_older_asked_questions(dir_questions, ext, name_dump_folder, day=7):
+def remove_older_asked_questions(dir_questions, ext, name_dump_folder, day_lmt=7):
     print('\n[remove_older_asked_questions]')
-    #dir_folder = os.path.dirname(os.path.abspath(__file__))    # Get current directory.
-    dir_questions = dir_questions                      # Get directory from path_txt.
+    fc_trg, fc_top, fc_rmv = 5, 20, 10
     list_file_paths = [os.path.join(dir_questions, file) for file in os.listdir(dir_questions) if file.endswith(ext)]
     dir_dump = os.path.join(dir_questions, name_dump_folder)
     if not os.path.exists(dir_dump):
         os.makedirs(dir_dump)
     cnt_ext_file = len(list_file_paths)
     print(f'--There are {cnt_ext_file} files with extension {ext}.')
-    if cnt_ext_file > 5:
+    #[2] Trigger file removal.
+    if cnt_ext_file > fc_trg: 
         #[3] Sort the files by date
         file_date_map = {}
         for file_path in list_file_paths:
             file_date = os.path.getmtime(file_path)
             file_date_map[file_path] = datetime.fromtimestamp(file_date)
         sorted_files = sorted(file_date_map.items(), key=lambda x: x[1])
-        if cnt_ext_file > 20:
-            # Remove the oldest (cnt_ext_file - 10) files
-            num_files_to_remove = cnt_ext_file - 10
+        #[4] If there's more than "fc_top" files, remove oldest "fc_rmv" files at once.
+        if cnt_ext_file > fc_top:
+            num_files_to_remove = cnt_ext_file - fc_rmv
             for i in range(num_files_to_remove):
                 file_path, _ = sorted_files[i]
                 shutil.move(file_path, dir_dump)
                 print(f'--File removed: {os.path.basename(file_path)}')
+        #[5] Or, just remove files older than "day_lmt" days
         else:
-            #[5] Remove files older than 'day' days
             current_date = datetime.now()
             for file_path, file_date in sorted_files:
-                if current_date - file_date > timedelta(days=day):
+                if current_date - file_date > timedelta(days=day_lmt):
+                    final_path = os.path.join(dir_dump, os.path.basename(file_path))
+                    if os.path.exists(final_path):
+                        os.remove(final_path)
                     shutil.move(file_path, dir_dump)
                     print(f'--File removed: {os.path.basename(file_path)}')
-    # Get the size of a single directory dir_dump
+
+    #[6] Get the size of a single directory dir_dump
     dump_size_kB = round(get_directory_size(dir_dump)/1024)
     print(f'--Current size of the dump folder {name_dump_folder} in kB: {dump_size_kB}.\n\n')
     
@@ -140,11 +195,7 @@ def get_directory_size(directory):
 
 
 
-def filter_file_with_keywords(
-    dir_folder, 
-    list_keywords_select=None, 
-    list_keywords_discard=None
-    ):
+def filter_file_with_keywords(dir_folder, list_keywords_select=None, list_keywords_discard=None):
     print('\n[filter_file_with_keywords]')
     if list_keywords_select is None:
         list_keywords_select = []
@@ -200,14 +251,14 @@ def find_latest_txt(dir=None):
     
     
     
-def increment_filename(path_txt):
+def create_plus_one_copy_of_txt_file(path_txt):
     """
     Increments the numerical part of a filename before the '.txt' extension.
     If the file is named 'example_1.txt', it will be changed to 'example_2.txt'.
     If no numerical part is found, '_1' will be added before the extension.
     Save a new cope of path_txt with a new filename in the same dir.
     """
-    print('\n[increment_filename]')
+    print('\n[create_plus_one_copy_of_txt_file]')
     # Regular expression to find the "_{n}.txt" part of the filename
     pattern = re.compile(r"(_(\d+))\.txt$")
     # Search for the pattern in the filename
@@ -222,7 +273,11 @@ def increment_filename(path_txt):
     else:
         # If no numerical part is found, add '_1' before the '.txt' extension
         path_new_txt = path_txt.replace(".txt", "_1.txt")
+    
+    #[] Copy and append opening.
     shutil.copy(path_txt, path_new_txt)
+    text_to_append = 'User:\n\n'
+    append_text_to_txt(path_new_txt, text_to_append, 0)
     print(f'--File created at: {path_new_txt}')
     return path_new_txt
 
@@ -269,7 +324,7 @@ def tkinter_select_file(dialog_title='Select a file'):
         if file_path:
             file_basename = os.path.basename(file_path)
             file_path = os.path.normpath(file_path) # Clean the path
-            print('--file_path:', file_path)
+            print(f'--file_path: {file_path}\n\n')
             return file_path, file_basename
         else:
             print('--No file selected. Exit code.')
@@ -290,7 +345,10 @@ def read_text_from_txt(path_txt, char_preview=0):
         with open(path_txt, 'r') as file:
             content = file.read()
             if char_preview > 0:
-                print('[read_text_from_txt] content quick view:\n >>', content[:char_preview].replace('\n', '\n >> '), '\n')
+                preview = content[:char_preview].replace('\n', '\n >> ')
+                print(f'[read_text_from_txt] content quick view:\n >> {preview}')
+            word_count = len(content.replace('\n', ' ').replace('\t', ' ').split())
+            print(f'--Approximate word count: {word_count}\n')
         return content
     except FileNotFoundError:
         print(f'--File not found:\n {path_txt}')
@@ -313,7 +371,10 @@ def append_text_to_txt(path_txt, text_to_append, char_preview): # This code will
         with open(path_txt, 'a') as file:  #a = append, w = write
             file.write(opening_of_append)
             file.write(text_to_append)
-            print('[append_text_to_txt] content quick view:\n >>', text_to_append[:char_preview].replace('\n', '\n >> '), '\n')
+            preview = text_to_append[:char_preview].replace('\n', '\n >> ')
+            print(f'[read_text_from_txt] content quick view:\n >> {preview}')
+            word_count = len(text_to_append.replace('\n', ' ').replace('\t', ' ').split())
+            print(f'--Approximate word count: {word_count}\n')
             file.close()
     except Exception as e:
         print(f'[append_text_to_txt] An error occurred while reading the file:\n {str(e)}')
@@ -323,11 +384,11 @@ def append_text_to_txt(path_txt, text_to_append, char_preview): # This code will
 # This function is no longer in use.
 def do_you_want_to_open_txt(message, path_txt):
     message = message + ' [Y/N]'
-    string_ques = input(message)
-    string_ques = string_ques.lower()
-    if ('yes' in string_ques) or ('ye' in string_ques) or ('y' in string_ques) or ('ok' in string_ques) \
-        or ('sure' in string_ques) or ('go' in string_ques):
-        print('User agreed to proceed.', string_ques)
+    ans_open = input(message)
+    ans_open = ans_open.lower()
+    if ('yes' in ans_open) or ('ye' in ans_open) or ('y' in ans_open) or ('ok' in ans_open) \
+        or ('sure' in ans_open) or ('go' in ans_open):
+        print('User agreed to proceed.', ans_open)
         try:
             # Attempt to open the text file
             with open(path_txt, 'r') as file:
@@ -341,11 +402,11 @@ def do_you_want_to_open_txt(message, path_txt):
         except Exception as e:
             print(f"An error occurred: {e}")
             sys.exit(1)
-    elif ('no' in string_ques) or ('n' in string_ques):
-        print('User chose to stop.', string_ques)
+    elif ('no' in ans_open) or ('n' in ans_open):
+        print('User chose to stop.', ans_open)
         sys.exit()
     else:
-        print('[Invalid Input] I will just keep moving on.\n', string_ques)
+        print('[Invalid Input] I will just keep moving on.\n', ans_open)
 
 
 
